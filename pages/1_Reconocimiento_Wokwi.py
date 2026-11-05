@@ -12,7 +12,6 @@ from openai import OpenAI
 # ==========================================
 
 st.title("🤖 Reconocimiento de alimentos")
-
 st.subheader("NutriScan - Inteligencia artificial")
 
 MQTT_SERVER = "157.230.214.127"
@@ -21,28 +20,27 @@ MQTT_TOPIC = "nutriscan/resultado"
 
 
 # ==========================================
-# INICIALIZAR VARIABLES COMPARTIDAS
+# VARIABLES COMPARTIDAS
 # ==========================================
 
-if "nivel" not in st.session_state:
-    st.session_state.nivel = ""
+variables = {
+    "nivel": "",
+    "alimento": "",
+    "justificacion": "",
+    "mensaje_voz": "",
+    "confianza": 0.0
+}
 
-if "alimento" not in st.session_state:
-    st.session_state.alimento = ""
-
-if "justificacion" not in st.session_state:
-    st.session_state.justificacion = ""
-
-if "mensaje_voz" not in st.session_state:
-    st.session_state.mensaje_voz = ""
-
-if "confianza" not in st.session_state:
-    st.session_state.confianza = 0.0
+for clave, valor in variables.items():
+    if clave not in st.session_state:
+        st.session_state[clave] = valor
 
 
 # ==========================================
-# API KEY
+# VERIFICAR OPENAI
 # ==========================================
+
+st.caption("Sistema de reconocimiento NutriScan")
 
 api_key = st.text_input(
     "Ingresa tu API Key de OpenAI",
@@ -62,7 +60,7 @@ def encode_image(image):
 
 
 # ==========================================
-# RECONOCIMIENTO Y CLASIFICACION
+# ANALIZAR ALIMENTO
 # ==========================================
 
 def analizar_alimento(image, client):
@@ -75,42 +73,43 @@ def analizar_alimento(image, client):
     Eres NutriScan, un sistema de reconocimiento
     y evaluacion nutricional de alimentos.
 
-    Analiza la imagen, identifica el alimento
-    y clasificalo en una de estas categorias:
+    Analiza la imagen e identifica el alimento.
+
+    Clasifica el alimento en:
 
     BUENO:
     Alimentos generalmente nutritivos y adecuados
-    para formar parte de una alimentacion equilibrada.
+    para una alimentacion equilibrada.
 
     MEDIO:
     Alimentos cuyo consumo depende de la cantidad,
-    preparacion, ingredientes o frecuencia.
+    preparacion e ingredientes.
 
     MALO:
     Productos con caracteristicas nutricionales
     desfavorables, como exceso de azucares libres,
     sodio o grasas saturadas, cuando exista
-    evidencia suficiente para determinarlo.
+    evidencia suficiente.
 
     REGLAS:
 
+    - No inventes ingredientes.
+    - No inventes nutrientes.
     - No clasifiques solamente por apariencia.
-    - No inventes ingredientes ni nutrientes.
-    - Si no puedes identificar el alimento,
-      utiliza NO_IDENTIFICADO.
-    - Si no tienes informacion suficiente,
-      indica que la clasificacion es preliminar.
+    - Si no identificas el alimento utiliza
+      NO_IDENTIFICADO.
+    - La confianza debe ser un valor entre 0 y 1.
     - Responde en español.
     - Devuelve exclusivamente JSON valido.
 
-    Estructura:
+    ESTRUCTURA:
 
     {
       "alimento": "nombre",
-      "nivel": "bueno, medio, malo o no_identificado",
+      "nivel": "bueno",
       "justificacion": "explicacion",
-      "confianza": 0.0,
-      "voz": "mensaje para comunicar el resultado"
+      "confianza": 0.90,
+      "voz": "El alimento ha sido identificado."
     }
     """
 
@@ -121,7 +120,6 @@ def analizar_alimento(image, client):
         messages=[
             {
                 "role": "user",
-
                 "content": [
 
                     {
@@ -131,7 +129,6 @@ def analizar_alimento(image, client):
 
                     {
                         "type": "image_url",
-
                         "image_url": {
                             "url": (
                                 f"data:{mime_type};base64,"
@@ -151,19 +148,21 @@ def analizar_alimento(image, client):
         max_tokens=800
     )
 
-    return json.loads(
-        response.choices[0].message.content
-    )
+    contenido = response.choices[0].message.content
+
+    if not contenido:
+        raise ValueError("OpenAI no devolvio resultados.")
+
+    return json.loads(contenido)
 
 
 # ==========================================
-# ENVIAR RESULTADO A MQTT
+# ENVIAR RESULTADO MQTT
 # ==========================================
 
 def enviar_mqtt(nivel):
 
     cliente = mqtt.Client(
-        mqtt.CallbackAPIVersion.VERSION1,
         client_id="NutriScan_Streamlit"
     )
 
@@ -177,18 +176,22 @@ def enviar_mqtt(nivel):
         "nivel": nivel
     }
 
-    info = cliente.publish(
-        MQTT_TOPIC,
-        json.dumps(mensaje),
-        qos=1
-    )
+    try:
 
-    info.wait_for_publish()
+        info = cliente.publish(
+            MQTT_TOPIC,
+            json.dumps(mensaje),
+            qos=1
+        )
 
-    if info.rc != mqtt.MQTT_ERR_SUCCESS:
-        raise RuntimeError("Error publicando mensaje MQTT")
+        info.wait_for_publish(timeout=10)
 
-    cliente.disconnect()
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError("Error publicando MQTT")
+
+    finally:
+
+        cliente.disconnect()
 
 
 # ==========================================
@@ -237,7 +240,7 @@ if st.button(
 
     if not api_key:
 
-        st.error("Ingresa tu API Key.")
+        st.error("Ingresa tu API Key de OpenAI.")
 
     elif imagen is None:
 
@@ -258,10 +261,9 @@ if st.button(
                     client
                 )
 
-
-            # Guardar resultados compartidos
-
-            nivel = resultado["nivel"].lower().strip()
+            nivel = str(
+                resultado.get("nivel", "")
+            ).lower().strip()
 
             if nivel not in [
                 "bueno",
@@ -269,26 +271,33 @@ if st.button(
                 "malo",
                 "no_identificado"
             ]:
-                raise ValueError("Clasificacion no valida")
 
-            st.session_state.alimento = resultado["alimento"]
+                raise ValueError(
+                    "Clasificacion no valida."
+                )
+
+            confianza = float(
+                resultado.get("confianza", 0)
+            )
+
+            if not 0 <= confianza <= 1:
+                raise ValueError("Confianza fuera de rango.")
+
+            st.session_state.alimento = (
+                resultado.get("alimento", "No identificado")
+            )
 
             st.session_state.nivel = nivel
 
             st.session_state.justificacion = (
-                resultado["justificacion"]
+                resultado.get("justificacion", "")
             )
 
-            st.session_state.confianza = float(
-                resultado["confianza"]
-            )
+            st.session_state.confianza = confianza
 
             st.session_state.mensaje_voz = (
-                resultado["voz"]
+                resultado.get("voz", "")
             )
-
-
-            # Mostrar resultado
 
             st.divider()
 
@@ -315,8 +324,7 @@ if st.button(
 
                 st.info("ALIMENTO NO IDENTIFICADO")
 
-
-            st.write("### Justificacion")
+            st.markdown("### Justificación")
 
             st.write(
                 st.session_state.justificacion
@@ -324,15 +332,12 @@ if st.button(
 
             st.write(
                 f"Confianza estimada: "
-                f"{st.session_state.confianza * 100:.1f}%"
+                f"{confianza * 100:.1f}%"
             )
-
-
-            # Enviar a Wokwi
 
             if nivel in ["bueno", "medio", "malo"]:
 
-                with st.spinner("Enviando a Wokwi mediante MQTT..."):
+                with st.spinner("Enviando resultado a Wokwi..."):
 
                     enviar_mqtt(nivel)
 
@@ -346,16 +351,13 @@ if st.button(
                     "No se envio ningun comando al ESP32."
                 )
 
-
         except Exception as e:
 
-            st.error(
-                f"Error: {e}"
-            )
+            st.error(f"Error: {e}")
 
 
 # ==========================================
-# MOSTRAR ULTIMO RESULTADO
+# ULTIMO RESULTADO
 # ==========================================
 
 if st.session_state.nivel:

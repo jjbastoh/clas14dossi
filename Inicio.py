@@ -40,3 +40,4 @@ st.info(
     "comunicación MQTT, reconocimiento de imágenes "
     "y respuestas auditivas."
 )
+

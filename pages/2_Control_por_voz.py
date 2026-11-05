@@ -14,21 +14,23 @@ st.subheader("NutriScan - Sistema auditivo")
 
 
 # ==========================================
-# VERIFICAR RESULTADO COMPARTIDO
+# VARIABLES COMPARTIDAS
 # ==========================================
 
-if "nivel" not in st.session_state:
-    st.session_state.nivel = ""
+variables = {
+    "nivel": "",
+    "mensaje_voz": "",
+    "alimento": ""
+}
 
-if "mensaje_voz" not in st.session_state:
-    st.session_state.mensaje_voz = ""
+for clave, valor in variables.items():
 
-if "alimento" not in st.session_state:
-    st.session_state.alimento = ""
+    if clave not in st.session_state:
+        st.session_state[clave] = valor
 
 
 # ==========================================
-# MOSTRAR INFORMACION
+# MOSTRAR RESULTADO
 # ==========================================
 
 if st.session_state.nivel:
@@ -36,7 +38,8 @@ if st.session_state.nivel:
     nivel = st.session_state.nivel
 
     st.write(
-        f"Alimento identificado: {st.session_state.alimento}"
+        f"Alimento identificado: "
+        f"{st.session_state.alimento}"
     )
 
     if nivel == "bueno":
@@ -50,6 +53,10 @@ if st.session_state.nivel:
     elif nivel == "malo":
 
         st.error("🔴 ALIMENTO MALO")
+
+    else:
+
+        st.info("ALIMENTO NO IDENTIFICADO")
 
 
     # ======================================
@@ -67,9 +74,17 @@ if st.session_state.nivel:
 
         try:
 
-            with st.spinner("Generando audio..."):
+            texto = st.session_state.mensaje_voz
 
-                texto = st.session_state.mensaje_voz
+            if not texto.strip():
+
+                texto = (
+                    f"El alimento identificado es "
+                    f"{st.session_state.alimento}. "
+                    f"Su clasificación es {nivel}."
+                )
+
+            with st.spinner("Generando audio..."):
 
                 audio = io.BytesIO()
 
@@ -84,7 +99,6 @@ if st.session_state.nivel:
                 audio.seek(0)
 
                 st.session_state.audio = audio.getvalue()
-
 
             st.success("Audio generado correctamente.")
 

@@ -74,14 +74,39 @@ if st.session_state.nivel:
 
         try:
 
-            texto = st.session_state.mensaje_voz
+            alimento = st.session_state.alimento
 
-            if not texto.strip():
+            # Generar mensaje completo según clasificación
+
+            if nivel == "bueno":
 
                 texto = (
-                    f"El alimento identificado es "
-                    f"{st.session_state.alimento}. "
-                    f"Su clasificación es {nivel}."
+                    f"El alimento identificado es {alimento}. "
+                    "Su clasificación es alimento bueno. "
+                    "Es una opción favorable para tu alimentación."
+                )
+
+            elif nivel == "medio":
+
+                texto = (
+                    f"El alimento identificado es {alimento}. "
+                    "Su clasificación es alimento medio. "
+                    "Se recomienda consumirlo con moderación."
+                )
+
+            elif nivel == "malo":
+
+                texto = (
+                    f"El alimento identificado es {alimento}. "
+                    "Su clasificación es alimento malo. "
+                    "Se recomienda evitar su consumo frecuente."
+                )
+
+            else:
+
+                texto = (
+                    f"El alimento identificado es {alimento}. "
+                    "No fue posible determinar su clasificación."
                 )
 
             with st.spinner("Generando audio..."):
@@ -141,4 +166,5 @@ else:
         label="Ir al reconocimiento de alimentos",
         icon="🤖"
     )
+
 
